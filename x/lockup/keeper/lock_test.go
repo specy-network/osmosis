@@ -13,6 +13,7 @@ import (
 	lockuptypes "github.com/osmosis-labs/osmosis/v16/x/lockup/types"
 
 	sdk "github.com/cosmos/cosmos-sdk/types"
+	sdkerrors "github.com/cosmos/cosmos-sdk/types/errors"
 )
 
 func (suite *KeeperTestSuite) TestRebondTokens() {
@@ -20,7 +21,7 @@ func (suite *KeeperTestSuite) TestRebondTokens() {
 	coins := sdk.NewCoins(sdk.NewInt64Coin("stake", 10))
 	addr1 := suite.TestAccs[0]
 	defaultLockID := uint64(1)
-	// nonExistingLockID := uint64(2)
+	nonExistingLockID := uint64(2)
 
 	testCases := []struct {
 		name          string
@@ -33,18 +34,18 @@ func (suite *KeeperTestSuite) TestRebondTokens() {
 			unlock:       true,
 			rebondLockID: defaultLockID,
 		},
-		// {
-		// 	name:          "Invalid: Trying to rebond a non existent lock id",
-		// 	unlock:        true,
-		// 	rebondLockID:  nonExistingLockID,
-		// 	expectedError: sdkerrors.Wrap(types.ErrLockupNotFound, fmt.Sprintf("lock with ID %d does not exist", nonExistingLockID)),
-		// },
-		// {
-		// 	name:          "Invalid: Trying to rebond a non-unbonding lock",
-		// 	unlock:        false,
-		// 	rebondLockID:  defaultLockID,
-		// 	expectedError: fmt.Errorf("lock %d is not unlocking, rebonding only possible in unlocking stage", defaultLockID),
-		// },
+		{
+			name:          "Invalid: Trying to rebond a non existent lock id",
+			unlock:        true,
+			rebondLockID:  nonExistingLockID,
+			expectedError: sdkerrors.Wrap(types.ErrLockupNotFound, fmt.Sprintf("lock with ID %d does not exist", nonExistingLockID)),
+		},
+		{
+			name:          "Invalid: Trying to rebond a non-unbonding lock",
+			unlock:        false,
+			rebondLockID:  defaultLockID,
+			expectedError: fmt.Errorf("lock %d is not unlocking, rebonding only possible in unlocking stage", defaultLockID),
+		},
 	}
 
 	for _, tc := range testCases {
@@ -73,7 +74,6 @@ func (suite *KeeperTestSuite) TestRebondTokens() {
 			locks, err := suite.App.LockupKeeper.GetPeriodLocks(suite.Ctx)
 			suite.Require().NoError(err)
 			suite.Require().Len(locks, 1)
-			fmt.Println(locks[0].EndTime)
 			suite.Require().False(locks[0].IsUnlocking())
 		})
 	}
