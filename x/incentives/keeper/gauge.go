@@ -213,10 +213,7 @@ func (k Keeper) SetGroupGauge(ctx sdk.Context, groupGauge types.GroupGauge) {
 	store := ctx.KVStore(k.storeKey)
 	// TODO: we can definitely store this better, this has GroupGaugeId in key and value
 	key := []byte(fmt.Sprintf("%s%s%d", "group_gauge", "|", groupGauge.GroupGaugeId))
-	osmoutils.MustSet(store, key, &types.GroupGauge{
-		GroupGaugeId: groupGauge.GroupGaugeId,
-		InternalIds:  groupGauge.InternalIds,
-	})
+	osmoutils.MustSet(store, key, &groupGauge)
 }
 
 func (k Keeper) GetGroupGaugeForGroupGaugeId(ctx sdk.Context, groupGaugeId uint64) (types.GroupGauge, error) {
@@ -228,7 +225,6 @@ func (k Keeper) GetGroupGaugeForGroupGaugeId(ctx sdk.Context, groupGaugeId uint6
 		return types.GroupGauge{}, nil
 	}
 
-	// valset delegation exists, so return it
 	var getGroupGauge types.GroupGauge
 	if err := proto.Unmarshal(bz, &getGroupGauge); err != nil {
 		return types.GroupGauge{}, nil
@@ -237,29 +233,30 @@ func (k Keeper) GetGroupGaugeForGroupGaugeId(ctx sdk.Context, groupGaugeId uint6
 	return getGroupGauge, nil
 }
 
-func (k Keeper) CreateGroupGauge(ctx sdk.Context, owner sdk.AccAddress, internalGaugeIds []uint64) error {
+func (k Keeper) CreateGroupGauge(ctx sdk.Context, owner sdk.AccAddress, internalGaugeIds []uint64) (uint64, error) {
 	nextGaugeId := k.GetLastGaugeID(ctx) + 1
 
 	gauge := types.Gauge{
 		Id:                nextGaugeId,
 		IsPerpetual:       false,
 		DistributeTo:      lockuptypes.QueryCondition{},
-		Coins:             sdk.NewCoins(sdk.NewCoin("uosmo", sdk.NewInt(1000))),
+		Coins:             sdk.NewCoins(sdk.NewCoin("uosmo", sdk.NewInt(100_000_000))),
 		StartTime:         ctx.BlockTime(),
 		NumEpochsPaidOver: 10,
 	}
 
 	if err := k.bk.SendCoinsFromAccountToModule(ctx, owner, types.ModuleName, gauge.Coins); err != nil {
-		return err
+		return 0, err
 	}
 
 	err := k.setGauge(ctx, &gauge)
 	if err != nil {
-		return err
+		return 0, err
 	}
 
 	newGroupGauge := types.GroupGauge{
 		GroupGaugeId: nextGaugeId,
+		Owner:        owner.String(),
 		InternalIds:  internalGaugeIds,
 	}
 
@@ -271,11 +268,11 @@ func (k Keeper) CreateGroupGauge(ctx sdk.Context, owner sdk.AccAddress, internal
 
 	err = k.CreateGaugeRefKeys(ctx, &gauge, combinedKeys, activeOrUpcomingGauge)
 	if err != nil {
-		return err
+		return 0, err
 	}
 	k.hooks.AfterCreateGauge(ctx, gauge.Id)
 
-	return nil
+	return nextGaugeId, nil
 }
 
 // AddToGaugeRewards adds coins to gauge.
@@ -300,6 +297,7 @@ func (k Keeper) AddToGaugeRewards(ctx sdk.Context, owner sdk.AccAddress, coins s
 	if err != nil {
 		return err
 	}
+
 	k.hooks.AfterAddToGauge(ctx, gauge.Id)
 	return nil
 }

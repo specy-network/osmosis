@@ -1,6 +1,7 @@
 package keeper_test
 
 import (
+	"fmt"
 	"strings"
 	"time"
 
@@ -883,30 +884,31 @@ func (s *KeeperTestSuite) TestGetPoolFromGaugeId() {
 // TestFunctionalInternalExternalCLGauge is a functional test that covers more complex scenarios relating to distributing incentives through gauges
 // at the end of each epoch.
 //
-//
 // Testing strategy:
 // 1. Initialize variables.
 // 2. Setup CL pool and gauge (gauge automatically gets created at the end of CL pool creation).
 // 3. Create external no-lock gauges for CL pools
 // 4. Create Distribution records to incentivize internal CL no-lock gauges
 // 5. let epoch 1 pass
-// 		- we only distribute external incentive in epoch 1.
-//  	- Check that incentive record has been correctly created and gauge has been correctly updated.
-// 		- all perpetual gauges must finish distributing records
-// 		- ClPool1 will recieve full 1Musdc, 1Meth in this epoch.
-//	 	- ClPool2 will recieve 500kusdc, 500keth in this epoch.
-//      - ClPool3 will recieve full 1Musdc, 1Meth in this epoch whereas
+//   - we only distribute external incentive in epoch 1.
+//   - Check that incentive record has been correctly created and gauge has been correctly updated.
+//   - all perpetual gauges must finish distributing records
+//   - ClPool1 will recieve full 1Musdc, 1Meth in this epoch.
+//   - ClPool2 will recieve 500kusdc, 500keth in this epoch.
+//   - ClPool3 will recieve full 1Musdc, 1Meth in this epoch whereas
+//
 // 6. Remove distribution records for internal incentives using HandleReplacePoolIncentivesProposal
 // 7. let epoch 2 pass
-//		-  We distribute internal incentive in epoch 2.
-// 		- check only external non-perpetual gauges with 2 epochs distributed
-// 		- check gauge has been correctly updated
-// 		- ClPool1 will already have 1Musdc, 1Meth (from epoch1) as external incentive. Will recieve 750Kstake as internal incentive.
-// 		- ClPool2 will already have 500kusdc, 500keth (from epoch1) as external incentive. Will recieve 500kusdc, 500keth (from epoch 2) as external incentive and 750Kstake as internal incentive.
-// 	    - ClPool3 will already have 1M, 1M (from epoch1) as external incentive. This pool will not recieve any internal incentive.
+//   - We distribute internal incentive in epoch 2.
+//   - check only external non-perpetual gauges with 2 epochs distributed
+//   - check gauge has been correctly updated
+//   - ClPool1 will already have 1Musdc, 1Meth (from epoch1) as external incentive. Will recieve 750Kstake as internal incentive.
+//   - ClPool2 will already have 500kusdc, 500keth (from epoch1) as external incentive. Will recieve 500kusdc, 500keth (from epoch 2) as external incentive and 750Kstake as internal incentive.
+//   - ClPool3 will already have 1M, 1M (from epoch1) as external incentive. This pool will not recieve any internal incentive.
+//
 // 8. let epoch 3 pass
-// 		- nothing distributes as non-perpetual gauges with 2 epochs have ended and perpetual gauges have not been reloaded
-//		- nothing should change in terms of incentive records
+//   - nothing distributes as non-perpetual gauges with 2 epochs have ended and perpetual gauges have not been reloaded
+//   - nothing should change in terms of incentive records
 func (s *KeeperTestSuite) TestFunctionalInternalExternalCLGauge() {
 	// 1. Initialize variables
 	s.SetupTest()
@@ -1130,4 +1132,78 @@ func (s *KeeperTestSuite) IncentivizeInternalGauge(poolIds []uint64, epochDurati
 	},
 	)
 	s.Require().NoError(err)
+}
+
+func (s *KeeperTestSuite) TestCreateGroupGaugeAndDistribute() {
+	// Create 3 internal incentives gauges(2 CL pool based incentives and 1Balancer incentives) that we want to split incentives over
+	s.FundAcc(s.TestAccs[1], sdk.NewCoins(sdk.NewCoin("uosmo", sdk.NewInt(1_000_000_000)))) // 1,000 osmo
+
+	clPool := s.PrepareConcentratedPool() // we already create a gauge here
+	internalGauge1, err := s.App.IncentivesKeeper.CreateGauge(s.Ctx, true, s.TestAccs[1], sdk.Coins{},
+		lockuptypes.QueryCondition{
+			LockQueryType: lockuptypes.NoLock,
+		},
+		s.Ctx.BlockTime(),
+		1,
+		clPool.GetId(),
+	)
+	s.Require().NoError(err)
+
+	internalGauge2, err := s.App.IncentivesKeeper.CreateGauge(s.Ctx, true, s.TestAccs[1], sdk.Coins{},
+		lockuptypes.QueryCondition{
+			LockQueryType: lockuptypes.NoLock,
+		},
+		s.Ctx.BlockTime(),
+		1,
+		clPool.GetId(),
+	)
+	s.Require().NoError(err)
+
+	internalGauge3, err := s.App.IncentivesKeeper.CreateGauge(s.Ctx, true, s.TestAccs[1], sdk.Coins{},
+		lockuptypes.QueryCondition{
+			LockQueryType: lockuptypes.ByDuration,
+			Denom:         "stake",       // this denom is just for test, is subject to change
+			Duration:      time.Hour * 7, // 7 hr is the max in test suite, will be 2weeks in mainnet
+		},
+		s.Ctx.BlockTime(),
+		1,
+		0,
+	)
+	s.Require().NoError(err)
+
+	// create GroupGauge
+	groupGaugeId, err := s.App.IncentivesKeeper.CreateGroupGauge(s.Ctx, s.TestAccs[1], []uint64{internalGauge1, internalGauge2, internalGauge3})
+	s.Require().NoError(err)
+
+	//let epoch 1 pass
+	epochInfo := s.App.IncentivesKeeper.GetEpochInfo(s.Ctx)
+	s.Ctx = s.Ctx.WithBlockTime(s.Ctx.BlockTime().Add(epochInfo.Duration))
+	s.App.EpochsKeeper.AfterEpochEnd(s.Ctx, epochInfo.GetIdentifier(), 1)
+
+	groupGauge, err := s.App.IncentivesKeeper.GetGaugeByID(s.Ctx, groupGaugeId)
+	s.Require().NoError(err)
+
+	fmt.Println("GROUP GAUGE: ", groupGauge)
+
+	// check if CL incentives were distribtued
+	incRecords, err := s.App.ConcentratedLiquidityKeeper.GetAllIncentiveRecordsForPool(s.Ctx, clPool.GetId())
+	s.Require().NoError(err)
+	fmt.Println("INCENTIVE RECORDS EPOCH 1: ", incRecords)
+
+	// check if balancer incentives were distributed
+
+	//let epoch 1 pass, we distribute 100 more incentives
+	s.Ctx = s.Ctx.WithBlockTime(s.Ctx.BlockTime().Add(epochInfo.Duration))
+	s.App.EpochsKeeper.AfterEpochEnd(s.Ctx, epochInfo.GetIdentifier(), 2)
+
+	incRecords, err = s.App.ConcentratedLiquidityKeeper.GetAllIncentiveRecordsForPool(s.Ctx, clPool.GetId())
+	s.Require().NoError(err)
+	fmt.Println("INCENTIVE RECORDS EPOCH 2: ", incRecords)
+
+	groupGauge, err = s.App.IncentivesKeeper.GetGaugeByID(s.Ctx, groupGaugeId)
+	s.Require().NoError(err)
+
+	fmt.Println("GROUP GAUGE AFTER: ", groupGauge)
+	// fmt.Println("INCENTIVE RECORD: ", incRecords)
+
 }

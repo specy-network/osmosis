@@ -269,22 +269,23 @@ func (k Keeper) distributeSyntheticInternal(
 func (k Keeper) AllocateAcrossGauges(ctx sdk.Context) error {
 	// Get All group gauge
 	// TODO: this is currently only getting for groupgauge1. Ideally we would run this for all GroupGauges
-	groupGauges, err := k.GetGroupGaugeForGroupGaugeId(ctx, 1)
+	groupGauges, err := k.GetGroupGaugeForGroupGaugeId(ctx, 5)
 	if err != nil {
 		return err
 	}
 
 	for _, internalGaugeId := range groupGauges.InternalIds {
-		// modify the amount gauge is we are going to Distribute based on volume
-		gauge, err := k.GetGaugeByID(ctx, internalGaugeId)
+		// change this based on the volume of the pool that that gauge represent
+		// Note: for simplicity set everything to 10 osmo
+		coins := sdk.NewCoins(sdk.NewCoin("uosmo", sdk.NewInt(10_000_000)))
+
+		ownerAddress, err := sdk.AccAddressFromBech32(groupGauges.Owner)
 		if err != nil {
 			return err
 		}
 
-		// change this based on the volume of the pool that that gauge represent
-		coins := sdk.NewCoins(sdk.NewCoin("osmo", sdk.NewInt(100)))
-
-		err = k.AddToGaugeRewards(ctx, sdk.AccAddress{}, coins, gauge.Id)
+		// TODO: this has to be added from the groupGauge not users balance
+		err = k.AddToGaugeRewards(ctx, ownerAddress, coins, internalGaugeId)
 		if err != nil {
 			return err
 		}
@@ -312,6 +313,7 @@ func (k Keeper) distributeInternal(
 	totalDistrCoins := sdk.NewCoins()
 
 	remainCoins := gauge.Coins.Sub(gauge.DistributedCoins)
+
 	// if its a perpetual gauge, we set remaining epochs to 1.
 	// otherwise is is a non perpetual gauge and we determine how many epoch payouts are left
 	remainEpochs := uint64(1)
@@ -356,7 +358,6 @@ func (k Keeper) distributeInternal(
 			// for ex: 10000uosmo to be distributed over 1day epoch will be 1000 tokens ÷ 86,400 seconds ≈ 0.01157 tokens per second (truncated)
 			// Note: reason why we do millisecond conversion is because floats are non-deterministic.
 			emissionRate := sdk.NewDecFromInt(remainAmountPerEpoch).QuoTruncate(sdk.NewDec(currentEpoch.Duration.Milliseconds()).QuoInt(sdk.NewInt(1000)))
-
 			ctx.Logger().Debug("distributeInternal, CreateIncentiveRecord NoLock gauge", "module", types.ModuleName, "gaugeId", gauge.Id, "poolId", pool.GetId(), "remainCoinPerEpoch", remainCoinPerEpoch, "height", ctx.BlockHeight())
 			_, err := k.clk.CreateIncentive(ctx,
 				pool.GetId(),
@@ -373,7 +374,6 @@ func (k Keeper) distributeInternal(
 			if err != nil {
 				return nil, err
 			}
-
 			totalDistrCoins = totalDistrCoins.Add(remainCoinPerEpoch)
 		}
 	} else {
@@ -468,7 +468,12 @@ func (k Keeper) Distribute(ctx sdk.Context, gauges []types.Gauge) (sdk.Coins, er
 			ctx.Logger().Debug("distributeSyntheticInternal, gauge id %d, %d", "module", types.ModuleName, "gaugeId", gauge.Id, "height", ctx.BlockHeight())
 			gaugeDistributedCoins, err = k.distributeSyntheticInternal(ctx, gauge, filteredLocks, &distrInfo)
 		} else {
-			gaugeDistributedCoins, err = k.distributeInternal(ctx, gauge, filteredLocks, &distrInfo)
+			fmt.Println("DISTRIBUE INTERNAL", gauge)
+
+			// TODO: if gaugeType == GroupGauge Donot distribute internal
+			if gauge.Id != 5 {
+				gaugeDistributedCoins, err = k.distributeInternal(ctx, gauge, filteredLocks, &distrInfo)
+			}
 		}
 		if err != nil {
 			return nil, err
