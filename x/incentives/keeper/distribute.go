@@ -269,20 +269,22 @@ func (k Keeper) distributeSyntheticInternal(
 func (k Keeper) AllocateAcrossGauges(ctx sdk.Context) error {
 	// Get All group gauge
 	// TODO: this is currently only getting for groupgauge1. Ideally we would run this for all GroupGauges
-	groupGauges, err := k.GetGroupGaugeForGroupGaugeId(ctx, 6)
+	groupGauges, err := k.GetAllGroupGauges(ctx)
 	if err != nil {
 		return err
 	}
 
-	for _, internalGaugeId := range groupGauges.InternalIds {
-		// change this based on the volume of the pool that that gauge represent
-		// Note: for simplicity set everything to 10 osmo
-		coins := sdk.NewCoins(sdk.NewCoin("uosmo", sdk.NewInt(10_000_000)))
+	for _, groupGauge := range groupGauges {
+		for _, internalGaugeId := range groupGauge.InternalIds {
+			// change this based on the volume of the pool that that gauge represent
+			// Note: for simplicity set everything to 10 osmo
+			coins := sdk.NewCoins(sdk.NewCoin("uosmo", sdk.NewInt(10_000_000)))
 
-		// TODO: this has to be added from the groupGauge not users balance
-		err = k.AddToGaugeRewardsFromGauge(ctx, groupGauges.GroupGaugeId, coins, internalGaugeId)
-		if err != nil {
-			return err
+			// TODO: this has to be added from the groupGauge not users balance
+			err = k.AddToGaugeRewardsFromGauge(ctx, groupGauge.GroupGaugeId, coins, internalGaugeId)
+			if err != nil {
+				return err
+			}
 		}
 	}
 

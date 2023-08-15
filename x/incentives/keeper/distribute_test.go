@@ -1187,6 +1187,11 @@ func (s *KeeperTestSuite) TestCreateGroupGaugeAndDistribute() {
 	groupGaugeId, err := s.App.IncentivesKeeper.CreateGroupGauge(s.Ctx, s.TestAccs[1], []uint64{internalGauge1, internalGauge2, internalGauge3})
 	s.Require().NoError(err)
 
+	groupGauges, err := s.App.IncentivesKeeper.GetAllGroupGauges(s.Ctx)
+	s.Require().NoError(err)
+
+	fmt.Println(groupGauges)
+
 	//let epoch 1 pass
 	epochInfo := s.App.IncentivesKeeper.GetEpochInfo(s.Ctx)
 	s.Ctx = s.Ctx.WithBlockTime(s.Ctx.BlockTime().Add(epochInfo.Duration))
@@ -1197,14 +1202,14 @@ func (s *KeeperTestSuite) TestCreateGroupGaugeAndDistribute() {
 
 	fmt.Println("GROUP GAUGE: ", groupGauge)
 
-	// check if CL incentives were distribtued
+	//check if CL incentives were distribtued
 	incRecords, err := s.App.ConcentratedLiquidityKeeper.GetAllIncentiveRecordsForPool(s.Ctx, clPool.GetId())
 	s.Require().NoError(err)
 	fmt.Println("INCENTIVE RECORDS EPOCH 1: ", len(incRecords), incRecords)
 
-	// get lock Rewards
+	//get lock Rewards
 
-	// check if balancer incentives were distributed
+	//check if balancer incentives were distributed
 
 	//let epoch 1 pass, we distribute 100 more incentives
 	s.Ctx = s.Ctx.WithBlockTime(s.Ctx.BlockTime().Add(epochInfo.Duration))

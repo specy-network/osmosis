@@ -216,6 +216,19 @@ func (k Keeper) SetGroupGauge(ctx sdk.Context, groupGauge types.GroupGauge) {
 	osmoutils.MustSet(store, key, &groupGauge)
 }
 
+func (k Keeper) GetAllGroupGauges(ctx sdk.Context) ([]types.GroupGauge, error) {
+	return osmoutils.GatherValuesFromStorePrefix(ctx.KVStore(k.storeKey), []byte("group_gauge"), k.ParseGroupGaugeFromBz)
+}
+
+func (k Keeper) ParseGroupGaugeFromBz(bz []byte) (groupGauge types.GroupGauge, err error) {
+	if len(bz) == 0 {
+		return types.GroupGauge{}, errors.New("group gauge not found")
+	}
+	err = proto.Unmarshal(bz, &groupGauge)
+
+	return groupGauge, err
+}
+
 func (k Keeper) GetGroupGaugeForGroupGaugeId(ctx sdk.Context, groupGaugeId uint64) (types.GroupGauge, error) {
 	store := ctx.KVStore(k.storeKey)
 	// TODO: we can definitely store this better, this has GroupGaugeId in key and value
