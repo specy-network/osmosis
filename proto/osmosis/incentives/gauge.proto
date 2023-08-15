@@ -50,6 +50,11 @@ message Gauge {
   ];
 }
 
+message GroupGauge {
+  uint64 group_gauge_id = 1;
+  repeated uint64 internal_ids = 2;
+}
+
 message LockableDurationsInfo {
   // List of incentivised durations that gauges will pay out to
   repeated google.protobuf.Duration lockable_durations = 1 [

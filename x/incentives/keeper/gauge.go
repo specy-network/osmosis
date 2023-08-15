@@ -16,6 +16,7 @@ import (
 
 	sdk "github.com/cosmos/cosmos-sdk/types"
 
+	"github.com/osmosis-labs/osmosis/osmoutils"
 	"github.com/osmosis-labs/osmosis/v17/x/incentives/types"
 	lockuptypes "github.com/osmosis-labs/osmosis/v17/x/lockup/types"
 	poolmanagertypes "github.com/osmosis-labs/osmosis/v17/x/poolmanager/types"
@@ -206,6 +207,57 @@ func (k Keeper) CreateGauge(ctx sdk.Context, isPerpetual bool, owner sdk.AccAddr
 	}
 	k.hooks.AfterCreateGauge(ctx, gauge.Id)
 	return gauge.Id, nil
+}
+
+func (k Keeper) SetGroupGauge(ctx sdk.Context, groupGauge types.GroupGauge) {
+	store := ctx.KVStore(k.storeKey)
+	// TODO: we can definitely store this better, this has GroupGaugeId in key and value
+	key := []byte(fmt.Sprintf("%s%s%d", "group_gauge", "|", groupGauge.GroupGaugeId))
+	osmoutils.MustSet(store, key, &types.GroupGauge{
+		GroupGaugeId: groupGauge.GroupGaugeId,
+		InternalIds:  groupGauge.InternalIds,
+	})
+}
+
+func (k Keeper) CreateGroupGauge(ctx sdk.Context, owner sdk.AccAddress, internalGaugeIds []uint64) error {
+	nextGaugeId := k.GetLastGaugeID(ctx) + 1
+
+	gauge := types.Gauge{
+		Id:                nextGaugeId,
+		IsPerpetual:       false,
+		DistributeTo:      lockuptypes.QueryCondition{},
+		Coins:             sdk.NewCoins(sdk.NewCoin("uosmo", sdk.NewInt(1000))),
+		StartTime:         ctx.BlockTime(),
+		NumEpochsPaidOver: 10,
+	}
+
+	if err := k.bk.SendCoinsFromAccountToModule(ctx, owner, types.ModuleName, gauge.Coins); err != nil {
+		return err
+	}
+
+	err := k.setGauge(ctx, &gauge)
+	if err != nil {
+		return err
+	}
+
+	newGroupGauge := types.GroupGauge{
+		GroupGaugeId: nextGaugeId,
+		InternalIds:  internalGaugeIds,
+	}
+
+	k.SetGroupGauge(ctx, newGroupGauge)
+	k.SetLastGaugeID(ctx, gauge.Id)
+
+	combinedKeys := combineKeys(types.KeyPrefixUpcomingGauges, getTimeKey(gauge.StartTime))
+	activeOrUpcomingGauge := true
+
+	err = k.CreateGaugeRefKeys(ctx, &gauge, combinedKeys, activeOrUpcomingGauge)
+	if err != nil {
+		return err
+	}
+	k.hooks.AfterCreateGauge(ctx, gauge.Id)
+
+	return nil
 }
 
 // AddToGaugeRewards adds coins to gauge.
