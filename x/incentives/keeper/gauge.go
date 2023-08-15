@@ -219,6 +219,24 @@ func (k Keeper) SetGroupGauge(ctx sdk.Context, groupGauge types.GroupGauge) {
 	})
 }
 
+func (k Keeper) GetGroupGaugeForGroupGaugeId(ctx sdk.Context, groupGaugeId uint64) (types.GroupGauge, error) {
+	store := ctx.KVStore(k.storeKey)
+	// TODO: we can definitely store this better, this has GroupGaugeId in key and value
+	key := []byte(fmt.Sprintf("%s%s%d", "group_gauge", "|", groupGaugeId))
+	bz := store.Get(key)
+	if bz == nil {
+		return types.GroupGauge{}, nil
+	}
+
+	// valset delegation exists, so return it
+	var getGroupGauge types.GroupGauge
+	if err := proto.Unmarshal(bz, &getGroupGauge); err != nil {
+		return types.GroupGauge{}, nil
+	}
+
+	return getGroupGauge, nil
+}
+
 func (k Keeper) CreateGroupGauge(ctx sdk.Context, owner sdk.AccAddress, internalGaugeIds []uint64) error {
 	nextGaugeId := k.GetLastGaugeID(ctx) + 1
 

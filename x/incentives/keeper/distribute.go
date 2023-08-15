@@ -266,6 +266,33 @@ func (k Keeper) distributeSyntheticInternal(
 	return k.distributeInternal(ctx, gauge, sortedAndTrimmedQualifiedLocks, distrInfo)
 }
 
+func (k Keeper) AllocateAcrossGauges(ctx sdk.Context) error {
+	// Get All group gauge
+	// TODO: this is currently only getting for groupgauge1. Ideally we would run this for all GroupGauges
+	groupGauges, err := k.GetGroupGaugeForGroupGaugeId(ctx, 1)
+	if err != nil {
+		return err
+	}
+
+	for _, internalGaugeId := range groupGauges.InternalIds {
+		// modify the amount gauge is we are going to Distribute based on volume
+		gauge, err := k.GetGaugeByID(ctx, internalGaugeId)
+		if err != nil {
+			return err
+		}
+
+		// change this based on the volume of the pool that that gauge represent
+		coins := sdk.NewCoins(sdk.NewCoin("osmo", sdk.NewInt(100)))
+
+		err = k.AddToGaugeRewards(ctx, sdk.AccAddress{}, coins, gauge.Id)
+		if err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
 // distributeInternal runs the distribution logic for a gauge, and adds the sends to
 // the distrInfo struct. It also updates the gauge for the distribution.
 // It handles any kind of gauges:
