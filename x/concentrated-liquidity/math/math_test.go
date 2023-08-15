@@ -1,6 +1,7 @@
 package math_test
 
 import (
+	"fmt"
 	"testing"
 
 	sdk "github.com/cosmos/cosmos-sdk/types"
@@ -8,6 +9,7 @@ import (
 
 	"github.com/osmosis-labs/osmosis/osmomath"
 	"github.com/osmosis-labs/osmosis/v17/x/concentrated-liquidity/math"
+	"github.com/osmosis-labs/osmosis/v17/x/concentrated-liquidity/types"
 	cltypes "github.com/osmosis-labs/osmosis/v17/x/concentrated-liquidity/types"
 )
 
@@ -268,8 +270,8 @@ func TestGetLiquidityFromAmounts(t *testing.T) {
 
 	testCases := map[string]struct {
 		currentSqrtP osmomath.BigDec
-		sqrtPHigh    sdk.Dec
-		sqrtPLow     sdk.Dec
+		sqrtPHigh    osmomath.BigDec
+		sqrtPLow     osmomath.BigDec
 		// the amount of token0 that will need to be sold to move the price from P_cur to P_low
 		amount0Desired sdk.Int
 		// the amount of token 1 that will need to be sold to move the price from P_cur to P_high.
@@ -283,40 +285,40 @@ func TestGetLiquidityFromAmounts(t *testing.T) {
 	}{
 		"happy path (case A)": {
 			currentSqrtP:      osmomath.MustNewDecFromStr("67"), // 4489
-			sqrtPHigh:         sqrt5500,                         // 5500
-			sqrtPLow:          sqrt4545,                         // 4545
+			sqrtPHigh:         sqrt5500BigDec,                   // 5500
+			sqrtPLow:          sqrt4545BigDec,                   // 4545
 			amount0Desired:    sdk.NewInt(1000000),
 			amount1Desired:    sdk.ZeroInt(),
 			expectedLiquidity: "741212151.448720111852782017",
 		},
 		"happy path (case A, but with sqrtPriceA greater than sqrtPriceB)": {
 			currentSqrtP:      osmomath.MustNewDecFromStr("67"), // 4489
-			sqrtPHigh:         sqrt4545,                         // 4545
-			sqrtPLow:          sqrt5500,                         // 5500
+			sqrtPHigh:         sqrt4545BigDec,                   // 4545
+			sqrtPLow:          sqrt5500BigDec,                   // 5500
 			amount0Desired:    sdk.NewInt(1000000),
 			amount1Desired:    sdk.ZeroInt(),
 			expectedLiquidity: "741212151.448720111852782017",
 		},
 		"happy path (case B)": {
 			currentSqrtP:      sqrt5000BigDec, // 5000
-			sqrtPHigh:         sqrt5500,       // 5500
-			sqrtPLow:          sqrt4545,       // 4545
+			sqrtPHigh:         sqrt5500BigDec, // 5500
+			sqrtPLow:          sqrt4545BigDec, // 4545
 			amount0Desired:    sdk.NewInt(1000000),
 			amount1Desired:    sdk.NewInt(5000000000),
 			expectedLiquidity: "1517882343.751510418088349649",
 		},
 		"happy path (case C)": {
 			currentSqrtP:      osmomath.MustNewDecFromStr("75"), // 5625
-			sqrtPHigh:         sqrt5500,                         // 5500
-			sqrtPLow:          sqrt4545,                         // 4545
+			sqrtPHigh:         sqrt5500BigDec,                   // 5500
+			sqrtPLow:          sqrt4545BigDec,                   // 4545
 			amount0Desired:    sdk.ZeroInt(),
 			amount1Desired:    sdk.NewInt(5000000000),
 			expectedLiquidity: "741249214.836069764856625637",
 		},
 		"full range, price proportional to amounts, equal liquidities (some rounding error) price of 4": {
 			currentSqrtP:   sqrt(sdk.NewDec(4)),
-			sqrtPHigh:      cltypes.MaxSqrtPrice,
-			sqrtPLow:       cltypes.MinSqrtPrice,
+			sqrtPHigh:      osmomath.BigDecFromSDKDec(cltypes.MaxSqrtPrice),
+			sqrtPLow:       osmomath.BigDecFromSDKDec(cltypes.MinSqrtPrice),
 			amount0Desired: sdk.NewInt(4),
 			amount1Desired: sdk.NewInt(16),
 
@@ -326,8 +328,8 @@ func TestGetLiquidityFromAmounts(t *testing.T) {
 		},
 		"full range, price proportional to amounts, equal liquidities (some rounding error) price of 2": {
 			currentSqrtP:   sqrt(sdk.NewDec(2)),
-			sqrtPHigh:      cltypes.MaxSqrtPrice,
-			sqrtPLow:       cltypes.MinSqrtPrice,
+			sqrtPHigh:      osmomath.BigDecFromSDKDec(cltypes.MaxSqrtPrice),
+			sqrtPLow:       osmomath.BigDecFromSDKDec(cltypes.MinSqrtPrice),
 			amount0Desired: sdk.NewInt(1),
 			amount1Desired: sdk.NewInt(2),
 
@@ -337,8 +339,8 @@ func TestGetLiquidityFromAmounts(t *testing.T) {
 		},
 		"not full range, price proportional to amounts, non equal liquidities": {
 			currentSqrtP:   sqrt(sdk.NewDec(2)),
-			sqrtPHigh:      sqrt(sdk.NewDec(3)).SDKDec(),
-			sqrtPLow:       sqrt(sdk.NewDec(1)).SDKDec(),
+			sqrtPHigh:      sqrt(sdk.NewDec(3)),
+			sqrtPLow:       sqrt(sdk.NewDec(1)),
 			amount0Desired: sdk.NewInt(1),
 			amount1Desired: sdk.NewInt(2),
 
@@ -348,8 +350,8 @@ func TestGetLiquidityFromAmounts(t *testing.T) {
 		},
 		"current sqrt price on upper bound": {
 			currentSqrtP:   sqrt5500BigDec,
-			sqrtPHigh:      sqrt5500,
-			sqrtPLow:       sqrt4545,
+			sqrtPHigh:      sqrt5500BigDec,
+			sqrtPLow:       sqrt4545BigDec,
 			amount0Desired: sdk.ZeroInt(),
 			amount1Desired: sdk.NewInt(1000000),
 			// Liquidity1 = amount1 / (sqrtPriceB - sqrtPriceA)
@@ -368,6 +370,66 @@ func TestGetLiquidityFromAmounts(t *testing.T) {
 			// CASE C: if the currentSqrtP is greater than the sqrtPHigh, all the liquidity is in asset1, so GetLiquidityFromAmounts returns the liquidity of asset1
 			liquidity := math.GetLiquidityFromAmounts(tc.currentSqrtP, tc.sqrtPLow, tc.sqrtPHigh, tc.amount0Desired, tc.amount1Desired)
 			require.Equal(t, tc.expectedLiquidity, liquidity.String())
+		})
+	}
+}
+
+// TestGetLiquidityFromAmounts_CapitalEfficiency shows that different min spot prices result in different liquidity amounts
+func TestGetLiquidityFromAmounts_CapitalEfficiency(t *testing.T) {
+	testCases := map[string]struct {
+		currentSqrtP osmomath.BigDec
+		sqrtPHigh    osmomath.BigDec
+		sqrtPLow     osmomath.BigDec
+		// the amount of token0 that will need to be sold to move the price from P_cur to P_low
+		amount0Desired sdk.Int
+		// the amount of token 1 that will need to be sold to move the price from P_cur to P_high.
+		amount1Desired    sdk.Int
+		expectedLiquidity string
+		// liq0 = rate of change of reserves of token 1 for a change between sqrt(P_cur) and sqrt(P_low)
+		// liq1 = rate of change of reserves of token 1 for a change between sqrt(P_cur) and sqrt(P_high)
+		// price of x in terms of y
+		expectedLiquidity0 sdk.Dec
+		expectedLiquidity1 sdk.Dec
+	}{
+		"min spot price 10^-30": {
+			currentSqrtP:      osmomath.OneDec(),
+			sqrtPHigh:         osmomath.MustMonotonicSqrtBigDec(osmomath.BigDecFromSDKDec(types.MaxSpotPrice)),
+			sqrtPLow:          osmomath.MustMonotonicSqrtBigDec(osmomath.NewDecWithPrec(1, 30)),
+			amount0Desired:    sdk.NewInt(1_000_000),
+			amount1Desired:    sdk.NewInt(1_00_000),
+			expectedLiquidity: "741212151.448720111852782017",
+		},
+		"min spot price 10^-12": {
+			currentSqrtP:      osmomath.OneDec(),
+			sqrtPHigh:         osmomath.BigDecFromSDKDec(types.MaxSqrtPrice),
+			sqrtPLow:          osmomath.BigDecFromSDKDec(types.MinSqrtPrice),
+			amount0Desired:    sdk.NewInt(1_000_000),
+			amount1Desired:    sdk.NewInt(1_00_000),
+			expectedLiquidity: "741212151.448720111852782017",
+		},
+	}
+
+	for name, tc := range testCases {
+		name := name
+		tc := tc
+
+		t.Run(name, func(t *testing.T) {
+			// CASE A: if the currentSqrtP is less than the sqrtPLow, all the liquidity is in asset0, so GetLiquidityFromAmounts returns the liquidity of asset0
+			// CASE B: if the currentSqrtP is less than the sqrtPHigh but greater than sqrtPLow, the liquidity is split between asset0 and asset1,
+			// so GetLiquidityFromAmounts returns the smaller liquidity of asset0 and asset1
+			// CASE C: if the currentSqrtP is greater than the sqrtPHigh, all the liquidity is in asset1, so GetLiquidityFromAmounts returns the liquidity of asset1
+			fmt.Println("name", name)
+			liquidity := math.GetLiquidityFromAmounts(tc.currentSqrtP, tc.sqrtPLow, tc.sqrtPHigh, tc.amount0Desired, tc.amount1Desired)
+
+			fmt.Println("liquidity", liquidity)
+
+			actualAmountDenom0 := math.CalcAmount0Delta(osmomath.BigDecFromSDKDec(liquidity), tc.currentSqrtP, tc.sqrtPHigh, false)
+			actualAmountDenom1 := math.CalcAmount1Delta(osmomath.BigDecFromSDKDec(liquidity), tc.currentSqrtP, tc.sqrtPLow, false)
+
+			fmt.Println("actualAmountDenom0", actualAmountDenom0)
+			fmt.Println("actualAmountDenom1", actualAmountDenom1)
+
+			// require.Equal(t, tc.expectedLiquidity, liquidity.String())
 		})
 	}
 }

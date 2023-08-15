@@ -2042,11 +2042,11 @@ func (s *KeeperTestSuite) getExpectedLiquidity(test SwapTest, pool types.Concent
 }
 
 func (s *KeeperTestSuite) lowerUpperPricesToTick(lowerPrice, upperPrice sdk.Dec, tickSpacing uint64) (int64, int64) {
-	lowerSqrtPrice := osmomath.MustMonotonicSqrt(lowerPrice)
+	lowerSqrtPrice := osmomath.MustMonotonicSqrtBigDec(osmomath.BigDecFromSDKDec(lowerPrice))
 	newLowerTick, err := clmath.SqrtPriceToTickRoundDownSpacing(lowerSqrtPrice, tickSpacing)
 	s.Require().NoError(err)
 	upperSqrtPrice := osmomath.MustMonotonicSqrt(upperPrice)
-	newUpperTick, err := clmath.SqrtPriceToTickRoundDownSpacing(upperSqrtPrice, tickSpacing)
+	newUpperTick, err := clmath.SqrtPriceToTickRoundDownSpacing(osmomath.BigDecFromSDKDec(upperSqrtPrice), tickSpacing)
 	s.Require().NoError(err)
 	return newLowerTick, newUpperTick
 }

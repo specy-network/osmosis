@@ -508,7 +508,7 @@ func (k Keeper) initializeInitialPositionForPool(ctx sdk.Context, pool types.Con
 	// Calculate the spot price and sqrt price from the amount provided
 	initialSpotPrice := amount1Desired.ToDec().Quo(amount0Desired.ToDec())
 	// TODO: any concerns with this being an sdk.Dec?
-	initialCurSqrtPrice, err := osmomath.MonotonicSqrt(initialSpotPrice)
+	initialCurSqrtPrice, err := osmomath.MonotonicSqrtBigDec(osmomath.BigDecFromSDKDec(initialSpotPrice))
 	if err != nil {
 		return err
 	}
@@ -528,7 +528,7 @@ func (k Keeper) initializeInitialPositionForPool(ctx sdk.Context, pool types.Con
 	// However, there are ticks only at 100_000_000 X/Y and 100_000_100 X/Y.
 	// In such a case, we do not want to round the sqrt price to 100_000_000 X/Y, but rather
 	// let it float within the possible tick range.
-	pool.SetCurrentSqrtPrice(osmomath.BigDecFromSDKDec(initialCurSqrtPrice))
+	pool.SetCurrentSqrtPrice(initialCurSqrtPrice)
 	pool.SetCurrentTick(initialTick)
 	err = k.setPool(ctx, pool)
 	if err != nil {

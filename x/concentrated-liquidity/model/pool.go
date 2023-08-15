@@ -243,8 +243,8 @@ func (p Pool) CalcActualAmounts(ctx sdk.Context, lowerTick, upperTick int64, liq
 
 	var (
 		liquidityDeltaBigDec     = osmomath.BigDecFromSDKDec(liquidityDelta)
-		sqrtPriceLowerTickBigDec = osmomath.BigDecFromSDKDec(sqrtPriceLowerTick)
-		sqrtPriceUpperTickBigDec = osmomath.BigDecFromSDKDec(sqrtPriceUpperTick)
+		sqrtPriceLowerTickBigDec = sqrtPriceLowerTick
+		sqrtPriceUpperTickBigDec = sqrtPriceUpperTick
 
 		actualAmountDenom0 osmomath.BigDec
 		actualAmountDenom1 osmomath.BigDec

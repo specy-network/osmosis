@@ -264,7 +264,7 @@ func (e TickNotFoundError) Error() string {
 }
 
 type PriceBoundError struct {
-	ProvidedPrice sdk.Dec
+	ProvidedPrice osmomath.BigDec
 	MinSpotPrice  sdk.Dec
 	MaxSpotPrice  sdk.Dec
 }
@@ -828,7 +828,7 @@ func (e RanOutOfTicksForPoolError) Error() string {
 }
 
 type SqrtRootCalculationError struct {
-	SqrtPriceLimit sdk.Dec
+	SqrtPriceLimit osmomath.BigDec
 }
 
 func (e SqrtRootCalculationError) Error() string {
