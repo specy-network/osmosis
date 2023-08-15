@@ -269,7 +269,7 @@ func (k Keeper) distributeSyntheticInternal(
 func (k Keeper) AllocateAcrossGauges(ctx sdk.Context) error {
 	// Get All group gauge
 	// TODO: this is currently only getting for groupgauge1. Ideally we would run this for all GroupGauges
-	groupGauges, err := k.GetGroupGaugeForGroupGaugeId(ctx, 5)
+	groupGauges, err := k.GetGroupGaugeForGroupGaugeId(ctx, 6)
 	if err != nil {
 		return err
 	}
@@ -279,13 +279,8 @@ func (k Keeper) AllocateAcrossGauges(ctx sdk.Context) error {
 		// Note: for simplicity set everything to 10 osmo
 		coins := sdk.NewCoins(sdk.NewCoin("uosmo", sdk.NewInt(10_000_000)))
 
-		ownerAddress, err := sdk.AccAddressFromBech32(groupGauges.Owner)
-		if err != nil {
-			return err
-		}
-
 		// TODO: this has to be added from the groupGauge not users balance
-		err = k.AddToGaugeRewards(ctx, ownerAddress, coins, internalGaugeId)
+		err = k.AddToGaugeRewardsFromGauge(ctx, groupGauges.GroupGaugeId, coins, internalGaugeId)
 		if err != nil {
 			return err
 		}
@@ -468,10 +463,9 @@ func (k Keeper) Distribute(ctx sdk.Context, gauges []types.Gauge) (sdk.Coins, er
 			ctx.Logger().Debug("distributeSyntheticInternal, gauge id %d, %d", "module", types.ModuleName, "gaugeId", gauge.Id, "height", ctx.BlockHeight())
 			gaugeDistributedCoins, err = k.distributeSyntheticInternal(ctx, gauge, filteredLocks, &distrInfo)
 		} else {
-			fmt.Println("DISTRIBUE INTERNAL", gauge)
-
-			// TODO: if gaugeType == GroupGauge Donot distribute internal
-			if gauge.Id != 5 {
+			// TODO: if gaugeType == GroupGauge Donot distribute anything
+			if gauge.Id != 6 {
+				fmt.Println("DISTRIBUTE INTERNAL ", gauge)
 				gaugeDistributedCoins, err = k.distributeInternal(ctx, gauge, filteredLocks, &distrInfo)
 			}
 		}

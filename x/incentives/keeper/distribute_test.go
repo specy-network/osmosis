@@ -1171,6 +1171,18 @@ func (s *KeeperTestSuite) TestCreateGroupGaugeAndDistribute() {
 	)
 	s.Require().NoError(err)
 
+	// Regular gauge no group gauge
+	// make sure this runs as usual
+	_, err = s.App.IncentivesKeeper.CreateGauge(s.Ctx, true, s.TestAccs[1], sdk.NewCoins(sdk.NewCoin("uosmo", sdk.NewInt(100))),
+		lockuptypes.QueryCondition{
+			LockQueryType: lockuptypes.NoLock,
+		},
+		s.Ctx.BlockTime(),
+		1,
+		clPool.GetId(),
+	)
+	s.Require().NoError(err)
+
 	// create GroupGauge
 	groupGaugeId, err := s.App.IncentivesKeeper.CreateGroupGauge(s.Ctx, s.TestAccs[1], []uint64{internalGauge1, internalGauge2, internalGauge3})
 	s.Require().NoError(err)
@@ -1188,7 +1200,9 @@ func (s *KeeperTestSuite) TestCreateGroupGaugeAndDistribute() {
 	// check if CL incentives were distribtued
 	incRecords, err := s.App.ConcentratedLiquidityKeeper.GetAllIncentiveRecordsForPool(s.Ctx, clPool.GetId())
 	s.Require().NoError(err)
-	fmt.Println("INCENTIVE RECORDS EPOCH 1: ", incRecords)
+	fmt.Println("INCENTIVE RECORDS EPOCH 1: ", len(incRecords), incRecords)
+
+	// get lock Rewards
 
 	// check if balancer incentives were distributed
 
@@ -1198,12 +1212,24 @@ func (s *KeeperTestSuite) TestCreateGroupGaugeAndDistribute() {
 
 	incRecords, err = s.App.ConcentratedLiquidityKeeper.GetAllIncentiveRecordsForPool(s.Ctx, clPool.GetId())
 	s.Require().NoError(err)
-	fmt.Println("INCENTIVE RECORDS EPOCH 2: ", incRecords)
+	fmt.Println("INCENTIVE RECORDS EPOCH 2: ", len(incRecords))
 
 	groupGauge, err = s.App.IncentivesKeeper.GetGaugeByID(s.Ctx, groupGaugeId)
 	s.Require().NoError(err)
 
 	fmt.Println("GROUP GAUGE AFTER: ", groupGauge)
 	// fmt.Println("INCENTIVE RECORD: ", incRecords)
+
+	s.Ctx = s.Ctx.WithBlockTime(s.Ctx.BlockTime().Add(epochInfo.Duration))
+	s.App.EpochsKeeper.AfterEpochEnd(s.Ctx, epochInfo.GetIdentifier(), 3)
+
+	incRecords, err = s.App.ConcentratedLiquidityKeeper.GetAllIncentiveRecordsForPool(s.Ctx, clPool.GetId())
+	s.Require().NoError(err)
+	fmt.Println("INCENTIVE RECORDS EPOCH 3: ", len(incRecords), incRecords)
+
+	groupGauge, err = s.App.IncentivesKeeper.GetGaugeByID(s.Ctx, groupGaugeId)
+	s.Require().NoError(err)
+
+	fmt.Println("GROUP GAUGE AFTER: ", groupGauge)
 
 }

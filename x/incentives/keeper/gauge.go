@@ -256,7 +256,6 @@ func (k Keeper) CreateGroupGauge(ctx sdk.Context, owner sdk.AccAddress, internal
 
 	newGroupGauge := types.GroupGauge{
 		GroupGaugeId: nextGaugeId,
-		Owner:        owner.String(),
 		InternalIds:  internalGaugeIds,
 	}
 
@@ -273,6 +272,47 @@ func (k Keeper) CreateGroupGauge(ctx sdk.Context, owner sdk.AccAddress, internal
 	k.hooks.AfterCreateGauge(ctx, gauge.Id)
 
 	return nextGaugeId, nil
+}
+
+// TODO AddToGaugeRewardsFromGauge from gauge to gauge
+func (k Keeper) AddToGaugeRewardsFromGauge(ctx sdk.Context, fromGaugeId uint64, coins sdk.Coins, toGaugeId uint64) error {
+	// Note: we donot have to bankSend becase all the available incentive has already been bank sent when we create Group Gauge. Now we are just
+	// transferring funds from group gauge to internal gauges.
+	// if err := k.bk.SendCoinsFromAccountToModule(ctx, owner, types.ModuleName, coins); err != nil {
+	// 	return err
+	// }
+
+	fromGauge, err := k.GetGaugeByID(ctx, fromGaugeId)
+	if err != nil {
+		return err
+	}
+
+	toGauge, err := k.GetGaugeByID(ctx, toGaugeId)
+	if err != nil {
+		return err
+	}
+
+	if fromGauge.IsFinishedGauge(ctx.BlockTime()) {
+		return errors.New("gauge is already completed")
+	}
+
+	if toGauge.IsFinishedGauge(ctx.BlockTime()) {
+		return errors.New("gauge is already completed")
+	}
+
+	toGauge.Coins = toGauge.Coins.Add(coins...)
+	err = k.setGauge(ctx, toGauge)
+	if err != nil {
+		return err
+	}
+
+	fromGauge.Coins = fromGauge.Coins.Sub(coins)
+	err = k.setGauge(ctx, fromGauge)
+	if err != nil {
+		return err
+	}
+
+	return nil
 }
 
 // AddToGaugeRewards adds coins to gauge.

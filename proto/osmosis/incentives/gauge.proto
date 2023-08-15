@@ -52,8 +52,7 @@ message Gauge {
 
 message GroupGauge {
   uint64 group_gauge_id = 1;
-  string owner = 2;
-  repeated uint64 internal_ids = 3;
+  repeated uint64 internal_ids = 2;
 }
 
 message LockableDurationsInfo {
