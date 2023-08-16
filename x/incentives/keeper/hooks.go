@@ -35,7 +35,6 @@ func (k Keeper) AfterEpochEnd(ctx sdk.Context, epochIdentifier string, epochNumb
 			ctx.EventManager().IncreaseCapacity(2e6)
 		}
 
-		fmt.Println("EPOCH ", epochIdentifier)
 		err := k.AllocateAcrossGauges(ctx)
 		if err != nil {
 			return err

@@ -1,7 +1,6 @@
 package keeper_test
 
 import (
-	"fmt"
 	"strings"
 	"time"
 
@@ -1134,32 +1133,67 @@ func (s *KeeperTestSuite) IncentivizeInternalGauge(poolIds []uint64, epochDurati
 	s.Require().NoError(err)
 }
 
+/*
+Test Structure
+Step 1:
+Create 3 internal-gauges that'll we'll add to split incentives
+Create 1 regular no-lock perp gauge to make sure it's flow is not affected
+
+Step 2:
+Create Group Gauge with 100_000_000uosmo paid over 3 epoch, equally split between 3 internal gauges.
+It also links internal-gauge with groupGauge Will look something like this: {groupGaugeId, [internalGaugeId1, internalGaugeId2, internalGaugeId3]}
+
+Step 3:
+Let epoch 1 pass we expect:
+
+	internalGauge1 to recieve 11_111_111uosmo, internalGauge2 to recieve 11_111_111uosmo, internalGauge3 to recieve 11_111_111uosmo
+	decrement GroupGauge coins from 100_000_000 - 33_333_333 = 66_666_667
+	We also expect, regular gauge incentive to be distributed.
+	Hence, total 3 incentiveRecord for CL pools (2 from internal-gauges, 1 from regular gauge) & 1 GAMM lock incentive.
+
+Step 4:
+Let epoch 2 pass, we expect:
+
+	internalGauge1 to recieve 11_111_111uosmo, internalGauge2 to recieve 11_111_111uosmo, internalGauge3 to recieve 11_111_111uosmo
+	incentiveGauge1, incentiveGauge2, incentiveGauge3 should be empty
+	decrement GroupGauge coins from 66_666_667 - 33_333_333 = 33_333_334
+	Hence, total 5 incentiveRecord for CL pools
+
+Let epoch 3 pass, we expect:
+
+	internalGauge1 to recieve 11_111_111uosmo, internalGauge2 to recieve 11_111_111uosmo, internalGauge3 to recieve 11_111_111uosmo
+	incentiveGauge1, incentiveGauge2, incentiveGauge3 should be empty
+	decrement GroupGauge coins from 33_333_334 - 33_333_333 = 1
+	Hence, total 7 incentiveRecord for CL pools
+*/
 func (s *KeeperTestSuite) TestCreateGroupGaugeAndDistribute() {
-	// Create 3 internal incentives gauges(2 CL pool based incentives and 1Balancer incentives) that we want to split incentives over
+
+	var (
+		epochInfo = s.App.IncentivesKeeper.GetEpochInfo(s.Ctx)
+
+		expectedCoinsDistributed       = sdk.NewCoins(sdk.NewCoin("uosmo", sdk.NewInt(11_111_111)))
+		expectedCoinsDistributedEpoch2 = sdk.NewCoins(sdk.NewCoin("uosmo", sdk.NewInt(11_111_111*2)))
+		expectedCoinsDistributedEpoch3 = sdk.NewCoins(sdk.NewCoin("uosmo", sdk.NewInt(11_111_111*3)))
+
+		expectedCoinsDistributedDecCoins = osmoutils.ConvertCoinsToDecCoins(expectedCoinsDistributed)
+
+		emissionRateForPoolClPool = sdk.NewDecFromInt(sdk.NewInt(11_111_111)).QuoTruncate(sdk.NewDec(epochInfo.Duration.Milliseconds()).QuoInt(sdk.NewInt(1000)))
+
+		expectedCoinsDistributedRegularGauge = osmoutils.ConvertCoinsToDecCoins(sdk.NewCoins(sdk.NewCoin("uosmo", sdk.NewInt(100))))
+		newEmissionRateForClPool             = sdk.NewDecFromInt(sdk.NewInt(100)).QuoTruncate(sdk.NewDec(epochInfo.Duration.Milliseconds()).QuoInt(sdk.NewInt(1000)))
+
+		groupGaugeCoinAfterEpoch1 = sdk.NewCoins(sdk.NewCoin("uosmo", sdk.NewInt(66_666_667)))
+		groupGaugeCoinAfterEpoch2 = sdk.NewCoins(sdk.NewCoin("uosmo", sdk.NewInt(33_333_334)))
+		groupGaugeCoinAfterEpoch3 = sdk.NewCoins(sdk.NewCoin("uosmo", sdk.NewInt(1)))
+	)
+
 	s.FundAcc(s.TestAccs[1], sdk.NewCoins(sdk.NewCoin("uosmo", sdk.NewInt(1_000_000_000)))) // 1,000 osmo
 
-	clPool := s.PrepareConcentratedPool() // we already create a gauge here
-	internalGauge1, err := s.App.IncentivesKeeper.CreateGauge(s.Ctx, true, s.TestAccs[1], sdk.Coins{},
-		lockuptypes.QueryCondition{
-			LockQueryType: lockuptypes.NoLock,
-		},
-		s.Ctx.BlockTime(),
-		1,
-		clPool.GetId(),
-	)
-	s.Require().NoError(err)
-
-	internalGauge2, err := s.App.IncentivesKeeper.CreateGauge(s.Ctx, true, s.TestAccs[1], sdk.Coins{},
-		lockuptypes.QueryCondition{
-			LockQueryType: lockuptypes.NoLock,
-		},
-		s.Ctx.BlockTime(),
-		1,
-		clPool.GetId(),
-	)
-	s.Require().NoError(err)
-
-	internalGauge3, err := s.App.IncentivesKeeper.CreateGauge(s.Ctx, true, s.TestAccs[1], sdk.Coins{},
+	// Step 1
+	clPool := s.PrepareConcentratedPool()                                                                 // we already create a gauge here
+	internalGauge1 := s.CreateNoLockExternalGauges(clPool.GetId(), sdk.Coins{}, s.TestAccs[1], uint64(1)) // gauge id =  2
+	internalGauge2 := s.CreateNoLockExternalGauges(clPool.GetId(), sdk.Coins{}, s.TestAccs[1], uint64(1)) // gauge id = 3
+	internalGauge3, err := s.App.IncentivesKeeper.CreateGauge(s.Ctx, true, s.TestAccs[1], sdk.Coins{},    // gauge id = 4
 		lockuptypes.QueryCondition{
 			LockQueryType: lockuptypes.ByDuration,
 			Denom:         "stake",       // this denom is just for test, is subject to change
@@ -1172,69 +1206,96 @@ func (s *KeeperTestSuite) TestCreateGroupGaugeAndDistribute() {
 	s.Require().NoError(err)
 
 	// Regular gauge no group gauge
-	// make sure this runs as usual
-	_, err = s.App.IncentivesKeeper.CreateGauge(s.Ctx, true, s.TestAccs[1], sdk.NewCoins(sdk.NewCoin("uosmo", sdk.NewInt(100))),
-		lockuptypes.QueryCondition{
-			LockQueryType: lockuptypes.NoLock,
-		},
-		s.Ctx.BlockTime(),
-		1,
-		clPool.GetId(),
-	)
-	s.Require().NoError(err)
+	_ = s.CreateNoLockExternalGauges(clPool.GetId(), sdk.NewCoins(sdk.NewCoin("uosmo", sdk.NewInt(100))), s.TestAccs[1], uint64(1)) // gauge id = 5
 
+	// Step 2
 	// create GroupGauge
-	groupGaugeId, err := s.App.IncentivesKeeper.CreateGroupGauge(s.Ctx, s.TestAccs[1], []uint64{internalGauge1, internalGauge2, internalGauge3})
+	groupGaugeId, err := s.App.IncentivesKeeper.CreateGroupGauge(s.Ctx, s.TestAccs[1], []uint64{internalGauge1, internalGauge2, internalGauge3}) // gauge id = 6
 	s.Require().NoError(err)
 
 	groupGauges, err := s.App.IncentivesKeeper.GetAllGroupGauges(s.Ctx)
 	s.Require().NoError(err)
 
-	fmt.Println(groupGauges)
+	s.Require().NotEmpty(groupGauges)
 
+	// Step 3
 	//let epoch 1 pass
-	epochInfo := s.App.IncentivesKeeper.GetEpochInfo(s.Ctx)
+	// ******************** EPOCH 1 *********************
 	s.Ctx = s.Ctx.WithBlockTime(s.Ctx.BlockTime().Add(epochInfo.Duration))
 	s.App.EpochsKeeper.AfterEpochEnd(s.Ctx, epochInfo.GetIdentifier(), 1)
 
+	// Validate that group gauge coins went down by 33_333_333uosmo
 	groupGauge, err := s.App.IncentivesKeeper.GetGaugeByID(s.Ctx, groupGaugeId)
 	s.Require().NoError(err)
 
-	fmt.Println("GROUP GAUGE: ", groupGauge)
+	s.Require().Equal(groupGauge.Coins, groupGaugeCoinAfterEpoch1)
 
-	//check if CL incentives were distribtued
-	incRecords, err := s.App.ConcentratedLiquidityKeeper.GetAllIncentiveRecordsForPool(s.Ctx, clPool.GetId())
+	s.ValidateDistributedGauge(internalGauge1, 1, expectedCoinsDistributed)
+	s.ValidateDistributedGauge(internalGauge2, 1, expectedCoinsDistributed)
+	//s.ValidateDistributedGauge(internalGauge3, 0, expectedCoinsDistributed) // this needs to be added with actual denom, but i've made sure the coin is in gauge
+
+	// Validate that we created incentive record after distributing gaugeId 2,3,5
+	clPoolIncentiveRecordsAtEpoch1, err := s.App.ConcentratedLiquidityKeeper.GetAllIncentiveRecordsForPool(s.Ctx, clPool.GetId())
 	s.Require().NoError(err)
-	fmt.Println("INCENTIVE RECORDS EPOCH 1: ", len(incRecords), incRecords)
 
-	//get lock Rewards
+	s.Require().Equal(3, len(clPoolIncentiveRecordsAtEpoch1))
 
-	//check if balancer incentives were distributed
+	s.ValidateIncentiveRecord(clPool.GetId(), expectedCoinsDistributedDecCoins[0], emissionRateForPoolClPool, clPoolIncentiveRecordsAtEpoch1[0])
+	s.ValidateIncentiveRecord(clPool.GetId(), expectedCoinsDistributedDecCoins[0], emissionRateForPoolClPool, clPoolIncentiveRecordsAtEpoch1[1])
+	s.ValidateIncentiveRecord(clPool.GetId(), expectedCoinsDistributedRegularGauge[0], newEmissionRateForClPool, clPoolIncentiveRecordsAtEpoch1[2])
 
-	//let epoch 1 pass, we distribute 100 more incentives
+	//let epoch 2 pass
+	// ******************** EPOCH 2 *********************
 	s.Ctx = s.Ctx.WithBlockTime(s.Ctx.BlockTime().Add(epochInfo.Duration))
 	s.App.EpochsKeeper.AfterEpochEnd(s.Ctx, epochInfo.GetIdentifier(), 2)
 
-	incRecords, err = s.App.ConcentratedLiquidityKeeper.GetAllIncentiveRecordsForPool(s.Ctx, clPool.GetId())
-	s.Require().NoError(err)
-	fmt.Println("INCENTIVE RECORDS EPOCH 2: ", len(incRecords))
-
+	// Validate that group gauge coins went down by 33_333_333uosmo
 	groupGauge, err = s.App.IncentivesKeeper.GetGaugeByID(s.Ctx, groupGaugeId)
 	s.Require().NoError(err)
 
-	fmt.Println("GROUP GAUGE AFTER: ", groupGauge)
-	// fmt.Println("INCENTIVE RECORD: ", incRecords)
+	s.Require().Equal(groupGauge.Coins, groupGaugeCoinAfterEpoch2)
 
+	s.ValidateDistributedGauge(internalGauge1, 2, expectedCoinsDistributedEpoch2)
+	s.ValidateDistributedGauge(internalGauge2, 2, expectedCoinsDistributedEpoch2)
+
+	// Validate that we created incentive record after distributing gaugeId 2,3,5
+	clPoolIncentiveRecordsAtEpoch2, err := s.App.ConcentratedLiquidityKeeper.GetAllIncentiveRecordsForPool(s.Ctx, clPool.GetId())
+	s.Require().NoError(err)
+
+	s.Require().Equal(5, len(clPoolIncentiveRecordsAtEpoch2))
+
+	s.ValidateIncentiveRecord(clPool.GetId(), expectedCoinsDistributedDecCoins[0], emissionRateForPoolClPool, clPoolIncentiveRecordsAtEpoch2[0])
+	s.ValidateIncentiveRecord(clPool.GetId(), expectedCoinsDistributedDecCoins[0], emissionRateForPoolClPool, clPoolIncentiveRecordsAtEpoch2[1])
+	s.ValidateIncentiveRecord(clPool.GetId(), expectedCoinsDistributedRegularGauge[0], newEmissionRateForClPool, clPoolIncentiveRecordsAtEpoch2[2])
+	s.ValidateIncentiveRecord(clPool.GetId(), expectedCoinsDistributedDecCoins[0], emissionRateForPoolClPool, clPoolIncentiveRecordsAtEpoch2[3])
+	s.ValidateIncentiveRecord(clPool.GetId(), expectedCoinsDistributedDecCoins[0], emissionRateForPoolClPool, clPoolIncentiveRecordsAtEpoch2[4])
+
+	//let epoch 3 pass
+	// ******************** EPOCH 3 *********************
 	s.Ctx = s.Ctx.WithBlockTime(s.Ctx.BlockTime().Add(epochInfo.Duration))
 	s.App.EpochsKeeper.AfterEpochEnd(s.Ctx, epochInfo.GetIdentifier(), 3)
 
-	incRecords, err = s.App.ConcentratedLiquidityKeeper.GetAllIncentiveRecordsForPool(s.Ctx, clPool.GetId())
-	s.Require().NoError(err)
-	fmt.Println("INCENTIVE RECORDS EPOCH 3: ", len(incRecords), incRecords)
-
+	// Validate that group gauge coins went down by 33_333_333uosmo
 	groupGauge, err = s.App.IncentivesKeeper.GetGaugeByID(s.Ctx, groupGaugeId)
 	s.Require().NoError(err)
 
-	fmt.Println("GROUP GAUGE AFTER: ", groupGauge)
+	s.Require().Equal(groupGauge.Coins, groupGaugeCoinAfterEpoch3)
+
+	s.ValidateDistributedGauge(internalGauge1, 3, expectedCoinsDistributedEpoch3)
+	s.ValidateDistributedGauge(internalGauge2, 3, expectedCoinsDistributedEpoch3)
+
+	// Validate that we created incentive record after distributing gaugeId 2,3,5
+	clPoolIncentiveRecordsAtEpoch3, err := s.App.ConcentratedLiquidityKeeper.GetAllIncentiveRecordsForPool(s.Ctx, clPool.GetId())
+	s.Require().NoError(err)
+
+	s.Require().Equal(7, len(clPoolIncentiveRecordsAtEpoch3))
+
+	s.ValidateIncentiveRecord(clPool.GetId(), expectedCoinsDistributedDecCoins[0], emissionRateForPoolClPool, clPoolIncentiveRecordsAtEpoch3[0])
+	s.ValidateIncentiveRecord(clPool.GetId(), expectedCoinsDistributedDecCoins[0], emissionRateForPoolClPool, clPoolIncentiveRecordsAtEpoch3[1])
+	s.ValidateIncentiveRecord(clPool.GetId(), expectedCoinsDistributedRegularGauge[0], newEmissionRateForClPool, clPoolIncentiveRecordsAtEpoch3[2])
+	s.ValidateIncentiveRecord(clPool.GetId(), expectedCoinsDistributedDecCoins[0], emissionRateForPoolClPool, clPoolIncentiveRecordsAtEpoch3[3])
+	s.ValidateIncentiveRecord(clPool.GetId(), expectedCoinsDistributedDecCoins[0], emissionRateForPoolClPool, clPoolIncentiveRecordsAtEpoch3[4])
+	s.ValidateIncentiveRecord(clPool.GetId(), expectedCoinsDistributedDecCoins[0], emissionRateForPoolClPool, clPoolIncentiveRecordsAtEpoch3[5])
+	s.ValidateIncentiveRecord(clPool.GetId(), expectedCoinsDistributedDecCoins[0], emissionRateForPoolClPool, clPoolIncentiveRecordsAtEpoch3[6])
 
 }

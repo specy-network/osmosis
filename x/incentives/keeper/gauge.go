@@ -249,13 +249,14 @@ func (k Keeper) GetGroupGaugeForGroupGaugeId(ctx sdk.Context, groupGaugeId uint6
 func (k Keeper) CreateGroupGauge(ctx sdk.Context, owner sdk.AccAddress, internalGaugeIds []uint64) (uint64, error) {
 	nextGaugeId := k.GetLastGaugeID(ctx) + 1
 
+	// Note: some values are currently hardcoded but will likely change based on function parameters
 	gauge := types.Gauge{
 		Id:                nextGaugeId,
 		IsPerpetual:       false,
 		DistributeTo:      lockuptypes.QueryCondition{},
-		Coins:             sdk.NewCoins(sdk.NewCoin("uosmo", sdk.NewInt(100_000_000))),
+		Coins:             sdk.NewCoins(sdk.NewCoin("uosmo", sdk.NewInt(100_000_000))), // 100uosmo
 		StartTime:         ctx.BlockTime(),
-		NumEpochsPaidOver: 10,
+		NumEpochsPaidOver: 3,
 	}
 
 	if err := k.bk.SendCoinsFromAccountToModule(ctx, owner, types.ModuleName, gauge.Coins); err != nil {
@@ -287,7 +288,6 @@ func (k Keeper) CreateGroupGauge(ctx sdk.Context, owner sdk.AccAddress, internal
 	return nextGaugeId, nil
 }
 
-// TODO AddToGaugeRewardsFromGauge from gauge to gauge
 func (k Keeper) AddToGaugeRewardsFromGauge(ctx sdk.Context, fromGaugeId uint64, coins sdk.Coins, toGaugeId uint64) error {
 	// Note: we donot have to bankSend becase all the available incentive has already been bank sent when we create Group Gauge. Now we are just
 	// transferring funds from group gauge to internal gauges.
